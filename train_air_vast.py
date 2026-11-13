@@ -23,6 +23,7 @@ import json
 import math
 import random
 import argparse
+import shutil
 from pathlib import Path
 from collections import defaultdict
 from dataclasses import dataclass
@@ -1001,6 +1002,16 @@ def main():
                     f"Upload final full checkpoint-{trainer.state.global_step} for resume",
                 )
             hub_callback._push(final_adapter_dir, "final_adapter", "Upload final_adapter after training")
+            if args.stop_after_epoch is not None:
+                epoch_name = f"epoch-{args.stop_after_epoch}"
+                epoch_adapter_dir = os.path.join(args.output_dir, epoch_name)
+                shutil.copytree(final_adapter_dir, epoch_adapter_dir, dirs_exist_ok=True)
+                hub_callback._push(
+                    epoch_adapter_dir,
+                    epoch_name,
+                    f"Upload immutable Air adapter for epoch {args.stop_after_epoch}",
+                )
+                print(f"--> Immutable epoch adapter saved/uploaded: {epoch_name}")
             hub_callback._push_tensorboard_runs(args.output_dir, f"final-step-{trainer.state.global_step}")
 
 
