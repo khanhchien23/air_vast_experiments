@@ -533,7 +533,8 @@ class MemoryEfficientTrainer(Trainer):
         if segments is not None:
             # global_step counts optimizer updates (not accumulation microsteps).
             weight = cosine_cot_weight(
-                self.state.global_step, self.state.max_steps,
+                self.state.global_step - self.schedule_start_step,
+                self.schedule_end_step - self.schedule_start_step,
                 self.cot_weight_start, self.cot_weight_end,
             )
             loss = segment_normalized_loss(logits, labels, segments, weight, self.answer_weight)
@@ -744,6 +745,8 @@ def main():
     parser.add_argument("--cot_weight_start", type=float, default=1.0)
     parser.add_argument("--cot_weight_end", type=float, default=0.5)
     parser.add_argument("--answer_weight", type=float, default=1.0)
+    parser.add_argument("--schedule_start_epoch", type=float, default=None,
+                        help="For an extension run, start this schedule at the given cumulative epoch.")
     parser.add_argument("--stop_after_epoch", type=int, default=None,
                         help="Pause at this cumulative epoch; keep --epochs fixed for resume")
     parser.add_argument("--crop_bbox", action="store_true", default=True)
@@ -766,6 +769,9 @@ def main():
         args.epoch_end_mode = True
         if min(args.cot_weight_start, args.cot_weight_end) < 0 or args.answer_weight <= 0:
             parser.error("CoT weights must be nonnegative and answer_weight positive")
+        if args.schedule_start_epoch is not None:
+            if args.schedule_start_epoch <= 1 or args.schedule_start_epoch >= args.epochs:
+                parser.error("schedule_start_epoch must be > 1 and < epochs")
     if args.logging_steps < 1 or (args.eval_steps is not None and args.eval_steps < 1):
         raise ValueError("logging_steps/eval_steps must be positive")
 
@@ -893,6 +899,11 @@ def main():
     trainer.cot_weight_start = args.cot_weight_start
     trainer.cot_weight_end = args.cot_weight_end
     trainer.answer_weight = args.answer_weight
+    trainer.schedule_total_epochs = args.epochs
+    trainer.schedule_start_epoch = args.schedule_start_epoch or 1.0
+    # These are replaced with the exact Trainer max_steps once training begins.
+    trainer.schedule_start_step = 0
+    trainer.schedule_end_step = max(1, int(round(trainer.state.max_steps)))
 
     # 4. Tự động Resume từ checkpoint gần nhất (Local hoặc tự tải từ HuggingFace Hub trên máy ảo mới)
     last_ckpt = None
@@ -958,15 +969,36 @@ def main():
             "answer_weight": args.answer_weight, "lr": args.lr,
             "model_id": args.model_id, "max_seq_length": args.max_seq_length,
             "lora_r": args.lora_r, "lora_alpha": args.lora_alpha,
+            "schedule_start_epoch": args.schedule_start_epoch,
         }
         class ScheduleStateCallback(TrainerCallback):
             def on_train_begin(self, arguments, state, control, **kwargs):
                 config = dict(schedule_config, total_steps=state.max_steps)
                 if last_ckpt:
                     path = Path(last_ckpt) / "scheduled_cot_config.json"
-                    if not path.is_file() or json.loads(path.read_text(encoding="utf-8")) != config:
-                        raise ValueError("Scheduled CoT resume config mismatch or missing metadata. Keep epochs/batch/weights/LR unchanged; use a separate output directory for a new run.")
+                    if not path.is_file():
+                        raise ValueError("Scheduled CoT resume metadata is missing from the checkpoint.")
+                    old = json.loads(path.read_text(encoding="utf-8"))
+                    if args.schedule_start_epoch is None:
+                        if old != config:
+                            raise ValueError("Scheduled CoT resume config mismatch. Keep epochs/batch/weights/LR unchanged, or use --schedule_start_epoch for a planned extension.")
+                    else:
+                        # Extension mode: permit changing only the cumulative epoch
+                        # horizon and the second-phase CoT schedule. All optimizer,
+                        # data, model, and batch settings must remain identical.
+                        invariant = ["mode", "batch_size", "grad_accum", "world_size",
+                                     "train_samples", "lr", "model_id", "max_seq_length",
+                                     "lora_r", "lora_alpha", "answer_weight"]
+                        if any(old.get(k) != config.get(k) for k in invariant):
+                            raise ValueError("Extension resume changed an invariant training setting.")
+                        if old.get("epochs") != args.schedule_start_epoch - 1:
+                            raise ValueError("schedule_start_epoch must be the epoch immediately after the existing run.")
+                        if abs(float(old.get("cot_weight_end", -999)) - float(args.cot_weight_start)) > 1e-8:
+                            raise ValueError("The extension start CoT weight must equal the previous run's ending weight.")
                 self.config = config
+                # The new Trainer state contains the extended total_steps.
+                trainer.schedule_start_step = int(round(state.max_steps * (args.schedule_start_epoch - 1) / args.epochs)) if args.schedule_start_epoch is not None else 0
+                trainer.schedule_end_step = int(state.max_steps)
                 print(f"--> Scheduled CoT: {config}")
 
             def on_save(self, arguments, state, control, **kwargs):
