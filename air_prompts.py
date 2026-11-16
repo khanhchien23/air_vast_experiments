@@ -1,10 +1,10 @@
 ﻿"""Air-only prompts shared by training and inference."""
 AIR_CLASSES = (
-    "Air.A10", "Air.AH64", "Air.B1", "Air.B2", "Air.B29", "Air.C130",
-    "Air.C17", "Air.C5", "Air.CH47", "Air.E2", "Air.E3", "Air.F117",
-    "Air.F14", "Air.F15", "Air.F16", "Air.F18", "Air.F22", "Air.F35",
-    "Air.H6", "Air.J10", "Air.J20", "Air.KC135", "Air.Mig29", "Air.Mi8",
-    "Air.Rafale", "Air.Su24", "Air.Su25", "Air.Su27", "Air.Tu160", "Air.Yak38",
+    "Air.A10", "Air.AH64", "Air.AS365", "Air.B2", "Air.B29", "Air.C130",
+    "Air.C17", "Air.CH47", "Air.CH53", "Air.Casa212", "Air.F22", "Air.F35",
+    "Air.IL76", "Air.J7", "Air.JH7", "Air.KC135", "Air.Ka27", "Air.Ka52",
+    "Air.L39", "Air.Mi24", "Air.Mi28", "Air.Mi8", "Air.Mig29", "Air.Rafale",
+    "Air.Su22", "Air.Su27", "Air.T6Texan", "Air.Yak130", "Air.Yak52", "Air.Z8",
 )
 DIRECT_SYSTEM = (
     "Classify the Air military aircraft in the image into exactly one of these classes: "
