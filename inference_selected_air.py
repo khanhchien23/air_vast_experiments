@@ -1,4 +1,4 @@
-"""Run Qwen3.5-9B + GRPO epoch-2 LoRA on real class-folder images or Parquet.
+"""Run Qwen3.5-9B + Air LoRA on real class-folder images or Parquet.
 
 The GRPO adapter already contains the policy weights; load only the base model
 and this adapter, not the SFT adapter a second time. Results are resumable.
@@ -36,9 +36,11 @@ from air_prompts import DIRECT_SYSTEM, DIRECT_USER, AIR_CLASSES
 
 # Hugging Face Hub reads this environment variable for private adapter downloads.
 # The token must not be hard-coded in source files.
-if os.environ.get("HF_TOKEN"):
-    os.environ.setdefault("HF_HUB_TOKEN", os.environ["HF_TOKEN"])
-    os.environ.setdefault("HUGGINGFACE_HUB_TOKEN", os.environ["HF_TOKEN"])
+HF_ACCESS_TOKEN = os.environ.get("HF_TOKEN") or os.environ.get("HF_HUB_TOKEN")
+if HF_ACCESS_TOKEN:
+    os.environ.setdefault("HF_TOKEN", HF_ACCESS_TOKEN)
+    os.environ.setdefault("HF_HUB_TOKEN", HF_ACCESS_TOKEN)
+    os.environ.setdefault("HUGGINGFACE_HUB_TOKEN", HF_ACCESS_TOKEN)
 
 MODEL_ID = "Qwen/Qwen3.5-9B"
 EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -128,7 +130,7 @@ def resolve_adapter(source, checkpoint):
         raise ValueError("--checkpoint is required when --adapter is a Hugging Face repo ID")
     from huggingface_hub import snapshot_download
     return Path(snapshot_download(repo_id=source, allow_patterns=[f"{checkpoint}/*"],
-                                  token=os.environ.get("HF_TOKEN"))) / checkpoint
+                                  token=HF_ACCESS_TOKEN)) / checkpoint
 
 
 def load_model(adapter):
@@ -196,10 +198,10 @@ def main():
                         help="Start at 1 on 32-48GB GPUs; increase after measuring VRAM")
     parser.add_argument("--limit", type=int, default=0, help="0=all")
     parser.add_argument("--no-resume", action="store_true")
-    parser.add_argument("--mode", choices=["direct", "answer_only"], default="answer_only")
+    parser.add_argument("--mode", choices=["direct", "answer_only", "scheduled_cot"], default="answer_only")
     args = parser.parse_args()
     global ENABLE_THINKING, SYSTEM_PROMPT, USER_PROMPT
-    ENABLE_THINKING = args.mode == "answer_only"
+    ENABLE_THINKING = args.mode != "direct"
     if not ENABLE_THINKING:
         SYSTEM_PROMPT, USER_PROMPT = DIRECT_SYSTEM, DIRECT_USER
     if args.max_new_tokens is None:
