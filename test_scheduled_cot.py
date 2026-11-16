@@ -83,7 +83,7 @@ class ScheduledLossTests(unittest.TestCase):
                 return dict(input_ids=ids, attention_mask=mask)
 
         features = []
-        for reasoning, answer in (("short", "Air.A10"), ("a longer reasoning", "Air.B1")):
+        for reasoning, answer in (("short", "Air.A10"), ("a longer reasoning", "Air.B29")):
             message = dict(content=[dict(text=f"<think>\n{reasoning}</think>\n<answer>{answer}</answer>")])
             features.append(dict(prompt_messages=[{}], full_messages=[{}, message], image=None))
         batch = scope["AirDataCollator"](Processor(), 1024, "scheduled_cot")(features)
